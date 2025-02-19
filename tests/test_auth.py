@@ -127,4 +127,144 @@ def test_password_hashing(client):
             "password": "mypassword123"
         }
     )
+    assert response.status_code == status.HTTP_200_OK"""Test cases for authentication endpoints."""
+import pytest
+from fastapi import status
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.core.security import verify_password
+from app.models.user import User
+
+def test_successful_registration(test_client: TestClient, db_session: Session):
+    """Test successful user registration."""
+    user_data = {
+        "username": "newuser",
+        "email": "newuser@example.com",
+        "password": "testpass123"
+    }
+    response = test_client.post("/api/v1/auth/register", json=user_data)
     assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["username"] == user_data["username"]
+    assert data["email"] == user_data["email"]
+    assert "id" in data
+    assert data["is_active"] is True
+
+def test_duplicate_username_registration(test_client: TestClient, normal_user: User):
+    """Test registration with duplicate username."""
+    user_data = {
+        "username": "testuser",  # Same as normal_user fixture
+        "email": "another@example.com",
+        "password": "testpass123"
+    }
+    response = test_client.post("/api/v1/auth/register", json=user_data)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Username already registered" in response.json()["detail"]
+
+def test_duplicate_email_registration(test_client: TestClient, normal_user: User):
+    """Test registration with duplicate email."""
+    user_data = {
+        "username": "anotheruser",
+        "email": "test@example.com",  # Same as normal_user fixture
+        "password": "testpass123"
+    }
+    response = test_client.post("/api/v1/auth/register", json=user_data)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Email already registered" in response.json()["detail"]
+
+def test_invalid_email_format(test_client: TestClient):
+    """Test registration with invalid email format."""
+    user_data = {
+        "username": "newuser",
+        "email": "invalid-email",
+        "password": "testpass123"
+    }
+    response = test_client.post("/api/v1/auth/register", json=user_data)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+def test_missing_required_fields(test_client: TestClient):
+    """Test registration with missing required fields."""
+    user_data = {
+        "username": "newuser"
+        # Missing email and password
+    }
+    response = test_client.post("/api/v1/auth/register", json=user_data)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+def test_successful_login(test_client: TestClient, normal_user: User):
+    """Test successful user login."""
+    login_data = {
+        "username": "testuser",
+        "password": "testpass123"
+    }
+    response = test_client.post(
+        "/api/v1/auth/login",
+        data=login_data,  # Use data instead of json for form data
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+def test_invalid_credentials_login(test_client: TestClient):
+    """Test login with invalid credentials."""
+    login_data = {
+        "username": "testuser",
+        "password": "wrongpassword"
+    }
+    response = test_client.post(
+        "/api/v1/auth/login",
+        data=login_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Incorrect username or password" in response.json()["detail"]
+
+def test_nonexistent_user_login(test_client: TestClient):
+    """Test login with non-existent user."""
+    login_data = {
+        "username": "nonexistent",
+        "password": "testpass123"
+    }
+    response = test_client.post(
+        "/api/v1/auth/login",
+        data=login_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Incorrect username or password" in response.json()["detail"]
+
+def test_successful_token_refresh(test_client: TestClient, normal_user_auth_headers: dict):
+    """Test successful token refresh."""
+    response = test_client.post(
+        "/api/v1/auth/refresh-token",
+        headers=normal_user_auth_headers
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+def test_invalid_token_refresh(test_client: TestClient):
+    """Test token refresh with invalid token."""
+    headers = {"Authorization": "Bearer invalid_token"}
+    response = test_client.post("/api/v1/auth/refresh-token", headers=headers)
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Could not validate credentials" in response.json()["detail"]
+
+def test_expired_token_refresh(test_client: TestClient):
+    """Test token refresh with expired token."""
+    # Note: This test might need additional setup to create an expired token
+    expired_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlciIsImV4cCI6MTUxNjIzOTAyMn0.4Auv2aMfz2dHZ7-bshEAj3hp_HlcQOWLDN8EuNMTcqY"
+    headers = {"Authorization": f"Bearer {expired_token}"}
+    response = test_client.post("/api/v1/auth/refresh-token", headers=headers)
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Could not validate credentials" in response.json()["detail"]
+
+def test_missing_token_refresh(test_client: TestClient):
+    """Test token refresh without token."""
+    response = test_client.post("/api/v1/auth/refresh-token")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Not authenticated" in response.json()["detail"]
