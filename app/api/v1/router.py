@@ -1,10 +1,8 @@
-"""Base router configuration for API v1."""
 from fastapi import APIRouter
 
-# Create the main v1 router with prefix
-router = APIRouter(prefix="/v1")
+from app.api.v1.endpoints import auth
 
-@router.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+api_router = APIRouter()
+
+# Include authentication routes
+api_router.include_router(auth.router, tags=["authentication"])
