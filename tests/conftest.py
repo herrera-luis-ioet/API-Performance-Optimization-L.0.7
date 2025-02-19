@@ -2,123 +2,151 @@
 import asyncio
 from typing import AsyncGenerator, Generator
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from redis import asyncio as aioredis
 
-from app.core.database import Base, get_db
-from app.core.security import create_access_token
+from app.core.security import get_password_hash, create_access_token
 from app.main import app
+from app.config import Settings
 from app.models.user import User
+from app.models.base import Base
 
-# Use in-memory SQLite for tests
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+# Test settings
+settings = Settings()
+settings.DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+settings.REDIS_URL = "redis://localhost:6379/1"  # Use a different Redis DB for testing
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
+# Create async engine for testing
+test_engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=False,
+    future=True
 )
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-@pytest.fixture(scope="session")
-def event_loop():
+# Create test session factory
+test_async_session = async_sessionmaker(
+    test_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
+# Create Redis test client
+test_redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+
+@pytest_asyncio.fixture(scope="session")
+def event_loop() -> Generator:
     """Create an instance of the default event loop for each test case."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
-@pytest.fixture(scope="session")
-def db():
-    """Session-wide test database."""
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
+@pytest_asyncio.fixture(scope="session")
+async def db_engine():
+    """Create a test database engine."""
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield test_engine
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
-@pytest.fixture(scope="function")
-def db_session(db):
-    """Creates a new database session for a test."""
-    connection = db.connection()
-    transaction = connection.begin()
-    
-    try:
-        yield db
-    finally:
-        transaction.rollback()
-        connection.close()
+@pytest_asyncio.fixture(scope="function")
+async def db_session(db_engine) -> AsyncGenerator[AsyncSession, None]:
+    """Get a test database session."""
+    async with test_async_session() as session:
+        yield session
+        await session.rollback()
+        await session.close()
 
-@pytest.fixture
-def client(db_session):
-    """Create a test client with a clean database."""
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-    
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
+@pytest_asyncio.fixture(scope="session")
+async def redis_client() -> AsyncGenerator[aioredis.Redis, None]:
+    """Get a test Redis client."""
+    await test_redis.flushdb()  # Clear test database
+    yield test_redis
+    await test_redis.flushdb()  # Clean up after tests
+    await test_redis.close()
 
-@pytest.fixture
-def test_user(db_session):
-    """Create a test user."""
+@pytest.fixture(scope="module")
+def test_app():
+    """Create a test FastAPI application."""
+    return app
+
+@pytest.fixture(scope="module")
+def test_client(test_app):
+    """Create a test client using the test application."""
+    return TestClient(test_app)
+
+@pytest_asyncio.fixture(scope="module")
+async def async_client(test_app) -> AsyncGenerator[AsyncClient, None]:
+    """Create an async test client using the test application."""
+    async with AsyncClient(app=test_app, base_url="http://test") as client:
+        yield client
+
+@pytest_asyncio.fixture(scope="function")
+async def normal_user(db_session: AsyncSession) -> User:
+    """Create a normal test user."""
     user = User(
-        email="test@example.com",
         username="testuser",
-        hashed_password="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LcdYxEGhKgQoAgpX.",  # password = test123
-        is_active=True
+        email="test@example.com",
+        hashed_password=get_password_hash("testpass123"),
+        is_superuser=False
     )
     db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
+    await db_session.commit()
+    await db_session.refresh(user)
     return user
 
-@pytest.fixture
-def test_superuser(db_session):
-    """Create a test superuser."""
+@pytest_asyncio.fixture(scope="function")
+async def superuser(db_session: AsyncSession) -> User:
+    """Create a superuser test user."""
     user = User(
-        email="admin@example.com",
         username="admin",
-        hashed_password="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LcdYxEGhKgQoAgpX.",  # password = test123
-        is_active=True,
+        email="admin@example.com",
+        hashed_password=get_password_hash("admin123"),
         is_superuser=True
     )
     db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
+    await db_session.commit()
+    await db_session.refresh(user)
     return user
 
-@pytest.fixture
-def user_token(test_user):
-    """Create a valid token for test user."""
-    return create_access_token(data={"sub": test_user.username})
+@pytest.fixture(scope="function")
+def normal_user_token(normal_user: User) -> str:
+    """Create an authentication token for the normal test user."""
+    return create_access_token({"sub": normal_user.username})
 
-@pytest.fixture
-def superuser_token(test_superuser):
-    """Create a valid token for test superuser."""
-    return create_access_token(data={"sub": test_superuser.username})
+@pytest.fixture(scope="function")
+def superuser_token(superuser: User) -> str:
+    """Create an authentication token for the superuser test user."""
+    return create_access_token({"sub": superuser.username})
 
-@pytest.fixture
-def authorized_client(client, user_token):
-    """Create a test client with user authorization."""
-    client.headers = {
-        **client.headers,
-        "Authorization": f"Bearer {user_token}"
+@pytest.fixture(scope="function")
+def normal_user_auth_headers(normal_user_token: str) -> dict:
+    """Create authentication headers for the normal test user."""
+    return {"Authorization": f"Bearer {normal_user_token}"}
+
+@pytest.fixture(scope="function")
+def superuser_auth_headers(superuser_token: str) -> dict:
+    """Create authentication headers for the superuser test user."""
+    return {"Authorization": f"Bearer {superuser_token}"}
+
+# Helper functions for test data generation
+def create_test_item_data(owner_id: int = None) -> dict:
+    """Create test data for an item."""
+    return {
+        "title": "Test Item",
+        "description": "This is a test item",
+        "owner_id": owner_id
     }
-    return client
 
-@pytest.fixture
-def superuser_client(client, superuser_token):
-    """Create a test client with superuser authorization."""
-    client.headers = {
-        **client.headers,
-        "Authorization": f"Bearer {superuser_token}"
+def create_test_user_data() -> dict:
+    """Create test data for a user."""
+    return {
+        "username": "newuser",
+        "email": "newuser@example.com",
+        "password": "newpass123"
     }
-    return client

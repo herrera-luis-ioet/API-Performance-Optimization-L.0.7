@@ -32,7 +32,45 @@
           "details": "Create endpoints for item management: create, read, update, delete operations with user ownership validation"
         }
       }
+    },
+    "Task2": {
+      "description": "Implement Comprehensive Test Suite",
+      "task_description": "Create and implement a complete test suite for the API endpoints and middleware",
+      "status": "to-do",
+      "details": "Create a comprehensive test suite that covers all API endpoints, authentication, authorization, rate limiting, and caching functionality. Include unit tests, integration tests, and proper test fixtures.",
+      "subtasks": {
+        "Task2SubTask1": {
+          "description": "Set up test environment and configuration",
+          "status": "completed",
+          "micro_agent": "TestCodeWritingAgent",
+          "details": "Created requirements-dev.txt with all necessary testing dependencies including pytest, pytest-asyncio, pytest-cov, httpx, aioredis, and other testing utilities"
+        },
+        "Task2SubTask2": {
+          "description": "Implement authentication tests",
+          "status": "to-do",
+          "micro_agent": "TestCodeWritingAgent",
+          "details": "Create test cases for user registration, login, token refresh, and authentication error scenarios"
+        },
+        "Task2SubTask3": {
+          "description": "Implement User CRUD tests",
+          "status": "to-do",
+          "micro_agent": "TestCodeWritingAgent",
+          "details": "Create test cases for user management endpoints including authorization checks"
+        },
+        "Task2SubTask4": {
+          "description": "Implement Item CRUD and caching tests",
+          "status": "to-do",
+          "micro_agent": "TestCodeWritingAgent",
+          "details": "Create test cases for item management endpoints including caching behavior"
+        },
+        "Task2SubTask5": {
+          "description": "Implement rate limiting tests",
+          "status": "to-do",
+          "micro_agent": "TestCodeWritingAgent",
+          "details": "Create test cases for rate limiting middleware including limit enforcement and headers"
+        }
+      }
     }
   },
-  "next_task_id": 2
+  "next_task_id": 3
 }
