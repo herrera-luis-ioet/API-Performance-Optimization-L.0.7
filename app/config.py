@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # Cache settings
     REDIS_URL: Optional[str] = None
     CACHE_EXPIRE_IN_SECONDS: int = 60 * 5  # 5 minutes
+    
+    # Rate limiting settings
+    RATE_LIMIT_REQUESTS: int = 100  # Number of requests allowed
+    RATE_LIMIT_WINDOW: int = 60  # Time window in seconds
+    RATE_LIMIT_ENABLED: bool = True  # Enable/disable rate limiting
 
     class Config:
         case_sensitive = True

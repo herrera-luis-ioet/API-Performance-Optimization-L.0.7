@@ -6,12 +6,16 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.api.v1 import router as api_v1_router
+from app.middleware.rate_limiter import RateLimitMiddleware
 
 app = FastAPI(title="API Performance Optimization Service")
 settings = Settings()
 
 # Include API v1 router
 app.include_router(api_v1_router)
+
+# Add rate limiting middleware
+app.add_middleware(RateLimitMiddleware)
 
 # Configure CORS
 app.add_middleware(
