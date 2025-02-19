@@ -9,12 +9,18 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "mysql://user:password@localhost:3306/api_performance"
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
+    DB_ECHO: bool = False
     
     # Redis settings
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: Optional[str] = None
+    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_POOL_SIZE: int = 10
+    REDIS_SOCKET_TIMEOUT: int = 5
+    REDIS_CONNECT_TIMEOUT: int = 2
+    REDIS_DEFAULT_EXPIRE: int = 3600  # 1 hour default cache expiration
     
     # Rate limiting settings
     RATE_LIMIT_REQUESTS: int = 100
