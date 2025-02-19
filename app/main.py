@@ -4,10 +4,14 @@ from fastapi.responses import JSONResponse
 import redis
 from sqlalchemy.orm import Session
 
-from config import Settings
+from app.config import Settings
+from app.api.v1 import router as api_v1_router
 
 app = FastAPI(title="API Performance Optimization Service")
 settings = Settings()
+
+# Include API v1 router
+app.include_router(api_v1_router)
 
 # Configure CORS
 app.add_middleware(
